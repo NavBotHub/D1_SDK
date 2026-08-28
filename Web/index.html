@@ -3,15 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#07111f" />
+    <meta name="theme-color" content="#eef1f4" />
     <meta
       name="description"
       content="A minimal English Wi-Fi controller for the NavBot D1 robot."
     />
     <title>D1 Wi-Fi Controller Demo</title>
     <link rel="stylesheet" href="styles.css" />
-    <script src="protocol.js" defer></script>
-    <script src="app.js" defer></script>
+    <script src="index.js" defer></script>
   </head>
   <body>
     <main class="shell">
@@ -23,23 +22,50 @@
           </div>
         </header>
 
+        <form id="connection-form" class="connection-form">
+          <label>
+            <span>Robot IP</span>
+            <input
+              id="host-input"
+              name="host"
+              type="text"
+              value="192.168.50.1"
+              autocomplete="off"
+              spellcheck="false"
+              required
+            />
+          </label>
+          <label class="port-field">
+            <span>Port</span>
+            <input
+              id="port-input"
+              name="port"
+              type="number"
+              value="8081"
+              min="1"
+              max="65535"
+              inputmode="numeric"
+              required
+            />
+          </label>
+          <button id="connect-button" class="connect-button" type="submit">
+            Connect
+          </button>
+        </form>
+
+        <p class="connection-hint">
+          For the D1 Wi-Fi hotspot, use 192.168.50.1 and port 8081.
+        </p>
+
         <div class="connection" role="status" aria-live="polite">
-          <span id="status-dot" class="status-dot" aria-hidden="true"></span>
+          <span id="status-dot" class="status-dot disconnected" aria-hidden="true"></span>
           <div>
-            <strong id="connection-status">Connecting to D1...</strong>
-            <span id="connection-address">192.168.50.1:8081</span>
+            <strong id="connection-status">Not connected</strong>
+            <span id="connection-address">Enter an address and select Connect.</span>
           </div>
         </div>
 
         <div class="actions" aria-label="D1 actions">
-          <button class="action action-learning" data-mode="3" disabled>
-            <span class="action-icon" aria-hidden="true">▶</span>
-            <span>
-              <strong>Start Learning</strong>
-              <small>Enter reinforcement learning</small>
-            </span>
-          </button>
-
           <button class="action action-stand" data-mode="1" disabled>
             <span class="action-icon" aria-hidden="true">↑</span>
             <span>
@@ -57,8 +83,88 @@
           </button>
         </div>
 
+        <section class="drive-controls" aria-label="Robot movement controls">
+          <div class="drive-group">
+            <strong class="drive-title">Move</strong>
+            <div class="direction-pad" aria-label="Forward, backward, left, and right">
+              <button
+                class="motion-button move-forward"
+                type="button"
+                data-motion="forward"
+                aria-label="Move forward"
+                title="Move forward"
+                disabled
+              >
+                <img src="icons/arrow-up.svg" alt="" aria-hidden="true" />
+              </button>
+              <button
+                class="motion-button move-left"
+                type="button"
+                data-motion="left"
+                aria-label="Move left"
+                title="Move left"
+                disabled
+              >
+                <img src="icons/arrow-left.svg" alt="" aria-hidden="true" />
+              </button>
+              <button
+                class="motion-button move-right"
+                type="button"
+                data-motion="right"
+                aria-label="Move right"
+                title="Move right"
+                disabled
+              >
+                <img src="icons/arrow-right.svg" alt="" aria-hidden="true" />
+              </button>
+              <button
+                class="motion-button move-back"
+                type="button"
+                data-motion="back"
+                aria-label="Move backward"
+                title="Move backward"
+                disabled
+              >
+                <img src="icons/arrow-down.svg" alt="" aria-hidden="true" />
+              </button>
+            </div>
+            <!-- <small>Press and hold to move</small> -->
+          </div>
+
+          <div class="drive-group">
+            <strong class="drive-title">Turn</strong>
+            <div class="turn-pad" aria-label="Turn left and right">
+              <button
+                class="motion-button"
+                type="button"
+                data-motion="turn-left"
+                aria-label="Turn left"
+                title="Turn left"
+                disabled
+              >
+                <img src="icons/rotate-ccw.svg" alt="" aria-hidden="true" />
+              </button>
+              <button
+                class="motion-button"
+                type="button"
+                data-motion="turn-right"
+                aria-label="Turn right"
+                title="Turn right"
+                disabled
+              >
+                <img src="icons/rotate-cw.svg" alt="" aria-hidden="true" />
+              </button>
+            </div>
+            <!-- <small>Press and hold to rotate</small> -->
+          </div>
+        </section>
+
+        <div id="velocity-status" class="velocity-status">
+          vx 0.000 · vy 0.000 · vw 0.000
+        </div>
+
         <div id="command-status" class="command-status" aria-live="polite">
-          Waiting for the D1 connection.
+          Enter the robot address, then select Connect.
         </div>
 
         <p class="safety-note">

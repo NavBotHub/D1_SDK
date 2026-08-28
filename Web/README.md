@@ -3,9 +3,9 @@
 ![Web](https://img.shields.io/badge/Web-supported-4285F4?logo=googlechrome&logoColor=white)
 ![D1](https://img.shields.io/badge/NavBot-D1-0078D4)
 
-This is a small browser remote control for the NavBot D1 robot dog. You can open it without installing a framework, connect to your robot, change its posture, and drive it with two on-screen joysticks.
+This is a small browser remote control for the NavBot D1 robot dog. You can open it without installing a framework, connect to your robot, change its posture, and drive it with six on-screen direction buttons.
 
-![D1 Wi-Fi Web Controller Demo](image.png)
+![D1 Wi-Fi Web Controller Demo](main.png)
 
 _The controls are disabled until the robot is connected and Start Learning has been accepted._
 
@@ -18,8 +18,8 @@ For a standard D1 hotspot connection, these are the only steps you need:
 3. Double-click `index.html` to open the controller in a browser.
 4. Keep **Robot IP** as `192.168.50.1` and **Port** as `8081`, unless your robot uses different settings.
 5. Select **Connect**.
-6. Wait until the message says **Learning mode ready**. The buttons and joysticks will become active.
-7. Use **Stand Up**, **Crouch Down**, and the two joysticks to control the robot.
+6. Wait until the message says **Learning mode ready**. The posture and direction buttons will become active.
+7. Use **Stand Up**, **Crouch Down**, and the direction buttons to control the robot.
 8. Select **Disconnect** when you finish.
 
 > **Safety:** Browser controls are not an emergency-stop system. Test at low speed in an open area and keep access to the robot's physical safety controls.
@@ -34,8 +34,17 @@ For a standard D1 hotspot connection, these are the only steps you need:
 | **Disconnect** | Select when you finish or need to change the address. | Stops local motion, sends zero velocity when possible, and closes the socket. |
 | **Stand Up** | Select once. | Requests the standing posture. |
 | **Crouch Down** | Select once. | Requests the lowered/lying posture. |
-| **Move joystick** | Drag in any direction. | Moves forward, backward, left, right, or diagonally. |
-| **Turn joystick** | Drag left or right. | Rotates the robot left or right. |
+| **Move direction buttons** | Press and hold the forward, backward, left, or right icon. | Moves in the selected direction until released. |
+| **Turn direction buttons** | Press and hold the left-turn or right-turn icon. | Rotates in the selected direction until released. |
+
+### Direction-Control Layout
+
+The movement area is divided into two clearly separated groups:
+
+- **Move**, on the left, uses four icon-only arrow buttons arranged as a directional pad: forward at the top, left and right in the middle, and backward at the bottom.
+- **Turn**, on the right, uses two icon-only rotation buttons: counterclockwise for turning left and clockwise for turning right.
+- On narrow phone screens, the **Turn** group moves below the **Move** group. The button behavior and command values do not change.
+- Each icon button includes an accessible browser label and tooltip even though no text is displayed inside the button.
 
 You do not need to look for a **Start Learning** button. The demo sends that command automatically after you select Connect. Controls remain disabled if the robot does not accept it.
 
@@ -76,6 +85,22 @@ The Wi-Fi SSID and password depend on the robot configuration and are not define
 
 This section describes every interactive control and status element shown by the demo.
 
+### UI-to-JavaScript Method Map
+
+| UI action | Methods called | Purpose |
+| --- | --- | --- |
+| Edit Robot IP or Port | `updateEndpointPreview()` → `readEndpoint()` | Validate the values and show the target address. No robot command is sent. |
+| Select Connect | `handleConnectionSubmit()` → `connect()` | Build the endpoint and open `/ws/robot`. |
+| WebSocket opens | `startLearning()` → `sendMode(3)` → `encodeModeCommand()` | Automatically send Start Learning and wait for its ACK. |
+| Select Disconnect | `handleConnectionSubmit()` → `disconnect()` → `stopMotion(true)` | Stop velocity, clear pending commands, and close the socket. |
+| Select Stand Up | `handleActionButtonClick()` → `stopMotion(true)` → `sendMode(1)` | Stop directional motion and request the standing posture. |
+| Select Crouch Down | `handleActionButtonClick()` → `stopMotion(true)` → `sendMode(2)` | Stop directional motion and request the lowered posture. |
+| Press a direction button | `pressMotionButton()` → `updateVelocityFromButtons()` | Activate that direction and calculate `vx`, `vy`, and `vw`. |
+| Hold a direction button | `startVelocityLoop()` → `sendVelocitySnapshot()` → `encodeVelocityCommand()` | Send the current velocity every `20 ms`. |
+| Release a direction button | `releaseMotionButton()` → `sendVelocitySnapshot()` | Remove that direction and send the remaining or zero velocity. |
+| Receive a robot frame | `decodeModeAck()` | Decode field `20` and match the ACK by sequence number. |
+| Page loses focus or becomes hidden | `stopMotion(true)` | Release all directions and attempt to send zero velocity. |
+
 ### Connection Inputs and Button
 
 | UI element | Default | Function | Network or command effect |
@@ -95,7 +120,7 @@ User selects Connect
   → WebSocket open
   → send Start Learning (field 8, mode 3, new seq)
   → wait up to 3 seconds for field-20 ACK with the same seq
-  → result 1: enable Stand Up, Crouch Down, and both joysticks
+  → result 1: enable Stand Up, Crouch Down, and direction buttons
   → timeout/rejection: keep all robot controls disabled
 ```
 
@@ -108,7 +133,7 @@ Both posture buttons send a binary `D1ModeCommand` inside `ClientRobotMessage` f
 | **Stand Up** | `1` | Requests the robot's standing posture. | `seq = next sequence`, `mode = 1`, `client_time_ms = current Unix time` |
 | **Crouch Down** | `2` | Requests the robot's lowered/lying posture. The backend/protocol may call this Lie Down. | `seq = next sequence`, `mode = 2`, `client_time_ms = current Unix time` |
 
-Before either posture command is sent, the demo resets both joysticks and attempts to send zero velocity.
+Before either posture command is sent, the demo releases all direction buttons and attempts to send zero velocity.
 
 The mode payload represented in Protobuf form is:
 
@@ -136,45 +161,29 @@ The successful response is `D1ModeAck` in incoming `RobotMessage` field `20`. On
 
 If this command times out or returns a non-success result, the user must disconnect, correct the backend/robot condition, and connect again.
 
-### Left Joystick — Move
+### Move Direction Buttons
 
-The left joystick controls planar translation. Its visual position is normalized to the range `-1.0` through `1.0`. Values within the `0.08` center dead zone become zero.
+The four icon buttons on the left control planar translation. Press and hold a button to move; release it to stop that direction.
 
-| Joystick direction | Normalized input | Robot value | Requested movement |
-| --- | --- | --- | --- |
-| Up | `leftY > 0` | `linear.x / vx > 0` | Forward |
-| Down | `leftY < 0` | `linear.x / vx < 0` | Backward |
-| Left | `leftX < 0` | `linear.y / vy > 0` | Lateral left |
-| Right | `leftX > 0` | `linear.y / vy < 0` | Lateral right |
-| Diagonal | Both axes non-zero | Both `vx` and `vy` non-zero | Combined translation |
+| Icon button | Robot value while held | Requested movement |
+| --- | --- | --- |
+| Up arrow | `linear.x / vx = +0.9` | Forward |
+| Down arrow | `linear.x / vx = -0.9` | Backward |
+| Left arrow | `linear.y / vy = +0.5` | Lateral left |
+| Right arrow | `linear.y / vy = -0.5` | Lateral right |
 
-Conversion:
+### Turn Direction Buttons
 
-```text
-vx =  0.9 × leftY
-vy = -0.5 × leftX
-```
+The two icon buttons on the right control yaw rotation.
 
-The circular input is magnitude-clamped, so diagonal input cannot exceed the normalized joystick radius.
+| Icon button | Robot value while held | Requested movement |
+| --- | --- | --- |
+| Counter-clockwise arrow | `angular.z / vw = +0.4` | Rotate left |
+| Clockwise arrow | `angular.z / vw = -0.4` | Rotate right |
 
-### Right Joystick — Turn
+### Direction-Button Velocity Command
 
-The right joystick controls yaw rotation only. Vertical movement is ignored, and the horizontal axis uses the same `0.08` center dead zone.
-
-| Joystick direction | Normalized input | Robot value | Requested movement |
-| --- | --- | --- | --- |
-| Left | `rightX < 0` | `angular.z / vw > 0` | Rotate left |
-| Right | `rightX > 0` | `angular.z / vw < 0` | Rotate right |
-
-Conversion:
-
-```text
-vw = -0.4 × rightX
-```
-
-### Joystick Velocity Command
-
-Both joysticks update one combined velocity command. While either joystick is held, the newest values are sent every `20 ms` as binary `ClientRobotMessage` field `2`:
+All held direction buttons update one combined velocity command. While at least one button is held, the newest values are sent every `20 ms` as binary `ClientRobotMessage` field `2`:
 
 ```proto
 message ClientRobotMessage {
@@ -198,7 +207,7 @@ The demo populates the Twist values as follows:
 | `angular.y` | `0` | `0` | rad/s |
 | `angular.z` | `vw` | `0.4` | rad/s |
 
-Releasing one joystick resets only that joystick's axes. If the other joystick remains active, its current command continues. Releasing the final active joystick stops the 20 ms timer and immediately sends the combined zero value.
+Releasing one button removes only that direction. Other held directions continue. Releasing the final active button stops the 20 ms timer and immediately sends zero velocity.
 
 ### Status and Read-Only Displays
 
@@ -206,17 +215,17 @@ Releasing one joystick resets only that joystick's axes. If the other joystick r
 | --- | --- | --- |
 | Connection dot and text | Shows disconnected, connecting, connected, or failed state and the current target. | No |
 | Command status | Shows Start Learning progress, posture-command progress, ACK results, timeout, or connection errors. | No |
-| `vx · vy · vw` display | Shows the velocity values currently produced by the two joysticks. | No; it reflects the field-2 command generated by the joysticks. |
+| `vx · vy · vw` display | Shows the velocity values currently produced by the direction buttons. | No; it reflects the field-2 command generated by the buttons. |
 | D1 hotspot hint | Reminds the user of the default `192.168.50.1:8081` endpoint. | No |
 
 ### Control Availability Rules
 
 - The Robot IP and Port inputs are editable only while disconnected.
-- Stand Up, Crouch Down, and both joysticks are disabled before connection.
+- Stand Up, Crouch Down, and all direction buttons are disabled before connection.
 - They remain disabled while the automatic Start Learning ACK is pending.
 - They are enabled only after Start Learning returns `result = 1`.
 - They are temporarily disabled while a posture command is awaiting its ACK.
-- Any socket close disables all robot controls and clears joystick motion.
+- Any socket close disables all robot controls and clears directional motion.
 
 </details>
 
@@ -248,7 +257,7 @@ When opened through `file://`, the demo still uses the plain robot WebSocket end
 ws://192.168.50.1:8081/ws/robot
 ```
 
-Direct file use works because the demo has no npm dependencies, ES modules, build output, or local `fetch()` requirements. The browser can load `index.js`, `styles.css`, and `image.png` through their relative paths.
+Direct file use works because the demo has no npm dependencies, ES modules, build output, or local `fetch()` requirements. The browser can load `index.js`, `styles.css`, and the local files under `icons/` through their relative paths.
 
 However, browser and backend security behavior can vary. A page opened through `file://` may send a WebSocket origin of `null`. If the D1 backend validates and rejects that origin, the page will open but the WebSocket connection will fail.
 
@@ -304,7 +313,7 @@ When the controller page itself is served over HTTPS, it selects `wss://` to avo
 During connection:
 
 1. The IP and port fields are locked.
-2. The posture buttons and joysticks remain disabled.
+2. The posture and direction buttons remain disabled.
 3. After the WebSocket opens, the demo automatically sends **Start Learning** (`mode = 3`).
 4. The demo waits up to three seconds for the matching mode ACK.
 5. Controls become available only when the ACK result is successful (`result = 1`).
@@ -326,33 +335,31 @@ Place the robot in a clear test area before sending any command.
 
 Each posture command uses a new sequence number. The UI waits for the matching ACK before enabling another command.
 
-#### Left Joystick — Move
+#### Move Buttons
 
-- Push up: move forward.
-- Push down: move backward.
-- Push left: move laterally left.
-- Push right: move laterally right.
-- Diagonal input combines forward/backward and lateral motion.
+- Hold the up-arrow icon to move forward.
+- Hold the down-arrow icon to move backward.
+- Hold the left-arrow icon to move laterally left.
+- Hold the right-arrow icon to move laterally right.
 
-#### Right Joystick — Turn
+#### Turn Buttons
 
-- Push left: rotate left.
-- Push right: rotate right.
-- Vertical movement is ignored.
+- Hold the counter-clockwise icon to rotate left.
+- Hold the clockwise icon to rotate right.
 
-The demo uses the same sign conversion and default limits as the reference controller:
+The demo uses these fixed command values while a button is held:
 
 ```text
-vx =  0.9 × left Y
-vy = -0.5 × left X
-vw = -0.4 × right X
+Forward / Back:  vx = +0.9 / -0.9
+Left / Right:    vy = +0.5 / -0.5
+Turn L / Turn R: vw = +0.4 / -0.4
 ```
 
-The displayed `vx`, `vy`, and `vw` values are the current command values. While either joystick is active, the latest velocity is transmitted every `20 ms`.
+The displayed `vx`, `vy`, and `vw` values are the current command values. While any direction button is held, the latest velocity is transmitted every `20 ms`.
 
 ### 6. Stop Motion and Disconnect
 
-The joystick returns to zero when released. The demo also clears motion and attempts to send a zero-velocity frame when:
+Releasing the final direction button sends zero velocity. The demo also clears motion and attempts to send a zero-velocity frame when:
 
 - the browser window loses focus;
 - the page becomes hidden;
@@ -378,9 +385,11 @@ An accepted command confirms only that the backend accepted the request. It does
 
 | File | Purpose |
 | --- | --- |
-| `index.html` | Controller markup, connection form, action buttons, joystick elements, and status regions. |
-| `index.js` | WebSocket lifecycle, binary protocol codec, mode ACK handling, joystick input, velocity transmission, and safe-stop logic. |
+| `index.html` | Controller markup, connection form, posture buttons, icon direction buttons, and status regions. |
+| `index.js` | WebSocket lifecycle, binary protocol codec, mode ACK handling, press-and-hold movement input, velocity transmission, and safe-stop logic. |
 | `styles.css` | Responsive demo layout and control states. |
+| `icons/` | Local Lucide SVG direction icons, kept in the project so the controller also works offline. |
+| `main.png` | Current controller screenshot used by this guide. |
 | `README.md` | Operation guide for this demo. |
 | `README_MORE.md` | Extended Wi-Fi protocol and custom-controller integration reference. |
 
@@ -411,10 +420,10 @@ The automatic Start Learning command did not receive a successful ACK. Check the
 
 The demo waits three seconds for a matching ACK. A timeout is an unknown result; do not assume the robot rejected or completed the command, and do not automatically resend it.
 
-### Why Does a Joystick Not Move the Robot?
+### Why Does a Direction Button Not Move the Robot?
 
 1. Confirm that the status says `Learning mode ready`.
-2. Confirm that the joystick visually moves and the velocity display changes.
+2. Confirm that the pressed icon button becomes active and the velocity display changes.
 3. Verify that the backend accepts `ClientRobotMessage` field `2` Twist frames.
 4. Test a zero-velocity frame before non-zero motion.
 5. Compare the deployed backend schema with [D1_Backend](https://github.com/NavBotHub/D1_Backend).
