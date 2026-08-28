@@ -1,302 +1,122 @@
-# NavBot D1 Wi-Fi Control Protocol
+# NavBot D1 Wi-Fi Web Controller Demo
 
-| Document attribute | Value |
-| --- | --- |
-| Document ID | `NBD1-WIFI-CP` |
-| Protocol version | `1.0.0` |
-| Document status | Engineering Release |
-| Applicable hardware | NavBot D1 quadruped robot and D1 variants exposing the same frontend service contract |
-| Default deployment | D1 Wi-Fi hotspot, robot host `192.168.50.1` |
-| Intended audience | Web-controller developers, robot integration engineers, verification engineers, and maintainers |
+![Web](https://img.shields.io/badge/Web-supported-4285F4?logo=googlechrome&logoColor=white)
+![D1](https://img.shields.io/badge/NavBot-D1-0078D4)
 
-## 1. Document Control
+This is a small browser remote control for the NavBot D1 robot dog. You can open it without installing a framework, connect to your robot, change its posture, and drive it with two on-screen joysticks.
 
-### 1.1 Applicability and Compatibility Statement
+![D1 Wi-Fi Web Controller Demo](image.png)
 
-This specification applies to a NavBot D1 backend that implements the endpoints and protobuf field assignments stated below. No robot firmware version identifier is available in the frontend repository; therefore, compatibility **shall** be verified against the target robot build before deployment. Hardware variants **may** use this specification only when their backend contract is wire-compatible.
+_The controls are disabled until the robot is connected and Start Learning has been accepted._
 
-The hotspot SSID, hotspot password, maximum motion limits, TLS certificates, and backend firmware version are deployment properties and are not defined by this protocol.
+## Start Here
 
-### 1.2 Normative Language
+For a standard D1 hotspot connection, these are the only steps you need:
 
-The terms **MUST**, **MUST NOT**, **REQUIRED**, **SHALL**, **SHALL NOT**, **SHOULD**, **SHOULD NOT**, and **MAY** express requirement strength. Safety statements take precedence over convenience or retry behaviour.
+1. Put the robot in a clear area and keep the physical emergency stop within reach.
+2. Connect your computer, phone, or handheld device to the D1 Wi-Fi hotspot.
+3. Double-click `index.html` to open the controller in a browser.
+4. Keep **Robot IP** as `192.168.50.1` and **Port** as `8081`, unless your robot uses different settings.
+5. Select **Connect**.
+6. Wait until the message says **Learning mode ready**. The buttons and joysticks will become active.
+7. Use **Stand Up**, **Crouch Down**, and the two joysticks to control the robot.
+8. Select **Disconnect** when you finish.
 
-### 1.3 Terminology and Abbreviations
+> **Safety:** Browser controls are not an emergency-stop system. Test at low speed in an open area and keep access to the robot's physical safety controls.
 
-| Term | Definition |
-| --- | --- |
-| ACK | Acknowledgement returned for a D1 mode command. |
-| API | Application Programming Interface. |
-| CORS | Cross-Origin Resource Sharing. |
-| D1 | NavBot D1 quadruped robot. |
-| HTTP / HTTPS | Hypertext Transfer Protocol, plain / TLS protected. |
-| MJPEG | Motion JPEG transported as a multipart HTTP response. |
-| Protobuf | Protocol Buffers binary wire encoding. |
-| RL | Reinforcement Learning operating mode. |
-| SSID | Wi-Fi network name. |
-| TLS | Transport Layer Security. |
-| UI | User Interface. |
-| WS / WSS | WebSocket, plain / TLS protected. |
+### What Each Control Does
 
-### 1.4 Reference Documents
-
-| Reference | Purpose |
-| --- | --- |
-| [Simple Demo Extension and Integration Guide](CONTROL_PROTOCOL.md) | Correct companion document for adding original-project controls and video to the demo. |
-| [`ws_channel.dart`](../app/lib/provider/ws_channel.dart) | Authoritative frontend behaviour for WebSocket lifecycle, velocity, mode ACKs, and telemetry. |
-| [`d1_mode_protocol.dart`](../app/lib/provider/d1_mode_protocol.dart) | Current mode-command and ACK wire codec. |
-| [`http_channel.dart`](../app/lib/provider/http_channel.dart) | Current HTTP paths, methods, bodies, and query parameters. |
-| [`gamepad_widget.dart`](../app/lib/page/gamepad_widget.dart) | Current input mapping and joystick conversion. |
-| [`robot_message.pb.dart`](../app/lib/protobuf/robot_message.pb.dart) | Generated Dart protobuf types bundled with the frontend. |
-| RFC 6455 | WebSocket protocol baseline. |
-| RFC 8259 | JSON data-interchange baseline for HTTP bodies. |
-| Protocol Buffers Encoding Guide | Binary field-key, varint, fixed64, and length-delimited encoding rules. |
-
-This document defines the Wi-Fi network contract used by a browser-based NavBot D1 controller. It focuses on how a client reaches the D1 over its hotspot, which transport is used for each feature, and how control messages move between the browser and robot.
-
-The companion integration link above intentionally targets `CONTROL_PROTOCOL.md`; it does not point back to this Wi-Fi specification.
-
-## 2. Scope
-
-This protocol covers:
-
-- joining the D1 Wi-Fi network;
-- locating the D1 service on the hotspot;
-- opening and maintaining the robot WebSocket;
-- sending D1 posture and learning commands;
-- sending manual velocity commands;
-- calling navigation and map HTTP APIs;
-- displaying the MJPEG camera stream;
-- handling disconnects, timeouts, browser security restrictions, and safe stops.
-
-It does not define the hotspot SSID or password. Those values depend on the robot configuration and must be supplied with the robot.
-
-## 3. Network Layer Specification
-
-### 3.1 Wi-Fi Association
-
-The browser cannot select or join a Wi-Fi network programmatically. The user must connect the phone, tablet, handheld, or computer to the D1 hotspot through the operating-system Wi-Fi settings.
-
-```text
-User opens system Wi-Fi settings
-  → selects the D1 hotspot SSID
-  → enters the hotspot password if required
-  → device receives an address on the D1 network
-  → browser opens the controller page
-  → page connects to 192.168.50.1
-```
-
-The original Android application also opens the system Wi-Fi settings; it does not silently join a named SSID.
-
-Textual association state machine:
-
-```text
-UNASSOCIATED
-  → [user selects D1 SSID] ASSOCIATING
-ASSOCIATING
-  → [IP configuration succeeds] ASSOCIATED
-  → [authentication/DHCP fails] UNASSOCIATED
-ASSOCIATED
-  → [192.168.50.1 reachable] SERVICE_DISCOVERY
-  → [Wi-Fi route lost] UNASSOCIATED
-SERVICE_DISCOVERY
-  → [control endpoint reachable] NETWORK_READY
-  → [route exists but service unavailable] DEGRADED
-NETWORK_READY
-  → [route or service lost] DEGRADED
-DEGRADED
-  → [service recovers] NETWORK_READY
-  → [Wi-Fi route lost] UNASSOCIATED
-```
-
-The client **MUST NOT** enable motion-producing controls before `NETWORK_READY`. Wi-Fi association alone does not prove that the robot control service is operational.
-
-### 3.2 Default Network Parameters
-
-| Parameter | Default | Meaning |
+| Control | What you do | What happens |
 | --- | --- | --- |
-| D1 host | `192.168.50.1` | Robot gateway/service address on the hotspot |
-| Control port | `8081` | HTTP API and robot WebSocket |
-| Video port | `8080` | MJPEG camera service |
-| Robot WebSocket path | `/ws/robot` | Binary control and telemetry channel |
-| SSH WebSocket path | `/ws/ssh` | Optional SSH tunnel |
-| Default image topic | `/image_raw` | Camera topic requested from the video service |
+| **Robot IP** | Enter the robot's IP address. | Chooses which robot the page will connect to. The D1 hotspot default is `192.168.50.1`. |
+| **Port** | Enter the control-service port. | Chooses the WebSocket port. The default is `8081`. |
+| **Connect** | Select once after entering the address. | Opens the robot socket and automatically starts Learning mode. |
+| **Disconnect** | Select when you finish or need to change the address. | Stops local motion, sends zero velocity when possible, and closes the socket. |
+| **Stand Up** | Select once. | Requests the standing posture. |
+| **Crouch Down** | Select once. | Requests the lowered/lying posture. |
+| **Move joystick** | Drag in any direction. | Moves forward, backward, left, right, or diagonally. |
+| **Turn joystick** | Drag left or right. | Rotates the robot left or right. |
 
-Default endpoints:
+You do not need to look for a **Start Learning** button. The demo sends that command automatically after you select Connect. Controls remain disabled if the robot does not accept it.
 
-```text
-Robot WebSocket: ws://192.168.50.1:8081/ws/robot
-HTTP API base:   http://192.168.50.1:8081
-MJPEG video:     http://192.168.50.1:8080/stream?topic=/image_raw
-SSH tunnel:      ws://192.168.50.1:8081/ws/ssh
-```
+The page does not join Wi-Fi, connect, or reconnect by itself. The user always controls those actions.
 
-The Simple Demo accepts an alternative control host and port through its page URL:
+## Related Repositories
 
-```text
-http://localhost:8000/?host=<D1-IP>&port=<control-port>
-```
+- Frontend application and UI reference: [D1_Flutter](https://github.com/NavBotHub/D1_Flutter)
+- Robot backend and protocol source: [D1_Backend](https://github.com/NavBotHub/D1_Backend)
 
-### 3.3 Port and Path Access Constraints
+For additional commands, protocol fields, HTTP APIs, video integration, telemetry, error handling, and extension guidance, see [README_MORE.md](README_MORE.md).
 
-| Port | Path | Method / frame | Direction | Access requirement |
-| ---: | --- | --- | --- | --- |
-| `8081` | `/ws/robot` | WebSocket binary | Bidirectional | One active socket per controller instance; backend concurrency limits are deployment-defined; binary protobuf only. |
-| `8081` | `/ws/ssh` | WebSocket | Bidirectional | Optional; credentials and tunnel semantics are backend-defined; do not expose publicly. |
-| `8081` | `/robot/*` | HTTP POST | Client → robot | JSON where specified; current compatibility profile expects HTTP `200`. |
-| `8081` | `/api/*` | HTTP GET/POST | Bidirectional request/response | CORS must permit the controller origin for browser use. |
-| `8081` | map endpoints | HTTP GET | Bidirectional request/response | Query values must be URL-encoded. |
-| `8080` | `/stream` | HTTP GET | Robot → client | Multipart MJPEG; `topic` query is required and must be URL-encoded. |
+## Requirements
 
-Unless an authenticated reverse proxy is deployed, these interfaces **MUST** be reachable only from a trusted, isolated robot-control network.
+- A NavBot D1 robot with its control service running.
+- A computer, phone, tablet, or handheld device with a modern browser.
+- Network access to the robot.
+- Optional: a local static HTTP server for browsers or backends that do not allow direct `file://` use.
+- Direct access to the robot's physical emergency stop during motion testing.
 
-### 3.4 Encryption and Endpoint Mapping
+No npm installation, build command, JavaScript framework, or generated bundle is required.
 
-| Controller origin | Control API | Robot socket | Video | Conformance condition |
-| --- | --- | --- | --- | --- |
-| `http://` on trusted D1 hotspot | `http://<host>:8081` | `ws://<host>:8081/ws/robot` | `http://<host>:8080/stream?...` | Supported default deployment. |
-| `https://` with TLS-capable robot/proxy | `https://<host>` | `wss://<host>/ws/robot` | `https://<host>/stream?...` | Certificate must be trusted; proxy must preserve WebSocket upgrade and streaming. |
-| `https://` with default plain D1 endpoints | Blocked | Blocked | Blocked | Non-conformant mixed-content deployment. |
-| `file://` page | Browser-dependent | `ws://` may work | HTTP image may work | Not recommended; use a local HTTP server. |
+## Default D1 Network Settings
 
-The client **MUST NOT** silently downgrade from HTTPS/WSS to HTTP/WS. When TLS is required but unavailable, connection shall fail closed with a visible diagnostic.
-
-## 4. Transport Layer and Encoding Specification
-
-| Feature | Transport | Encoding |
-| --- | --- | --- |
-| D1 posture/learning commands | `/ws/robot` binary frame | Protobuf wire format |
-| Manual velocity | `/ws/robot` binary frame | Protobuf wire format |
-| Robot telemetry | `/ws/robot` binary frame | Protobuf wire format |
-| Navigation and relocation | HTTP POST | JSON |
-| Map and settings APIs | HTTP GET/POST | JSON/query parameters |
-| Simple live video | HTTP port `8080` | Multipart MJPEG |
-| WebSocket image subscription | HTTP `/subImage` plus `/ws/robot` | JSON request plus protobuf frames |
-| SSH tunnel | `/ws/ssh` | Backend tunnel protocol |
-
-Do not send JSON text through `/ws/robot`. Control messages on that socket are binary protobuf wire frames.
-
-### 4.1 Mandatory Encoding Rules
-
-1. A client **MUST** set `WebSocket.binaryType = "arraybuffer"` or perform an equivalent binary conversion.
-2. A client **MUST NOT** send JSON strings, UTF-8 command names, base64 text, or ad-hoc byte layouts over `/ws/robot`.
-3. Protobuf field numbers and wire types **MUST NOT** be renumbered or repurposed.
-4. HTTP JSON bodies **MUST** use `Content-Type: application/json; charset=utf-8`.
-5. Query parameters **MUST** be percent-encoded using `URLSearchParams` or an equivalent encoder.
-6. Unknown protobuf fields **SHOULD** be skipped according to their wire type to preserve forward compatibility.
-7. Malformed or truncated binary frames **MUST** be rejected without executing a control action.
-
-### 4.2 Protobuf Prerequisites
-
-The Simple Demo contains a narrowly scoped handwritten codec for D1 mode commands and field-20 ACKs. A production controller that uses velocity or full telemetry **SHOULD** use generated JavaScript/TypeScript protobuf types from the authoritative backend `.proto` sources.
-
-Before generating a full codec, the development team **MUST** obtain and version-lock:
-
-- the exact `.proto` files used by the deployed D1 backend;
-- the protobuf compiler/runtime version;
-- the field assignments for compatibility extensions `19` and `20`;
-- a binary fixture set produced by the robot/backend;
-- a compatibility matrix relating backend firmware to protocol version.
-
-The frontend repository contains generated Dart files, not the authoritative `.proto` sources. Generated Dart declarations may be used for inspection, but **MUST NOT** be treated as a substitute for backend-controlled schemas in a new production implementation.
-
-### 4.3 Payload Validation Boundary
-
-All input is untrusted at the transport boundary. A conforming client shall validate frame type, buffer length, protobuf wire type, numeric finiteness, enum range, sequence correlation, HTTP status, and response content type before updating control state.
-
-## 5. Robot WebSocket Lifecycle
-
-### Connect
-
-```js
-const host = "192.168.50.1";
-const controlPort = 8081;
-const socket = new WebSocket(`ws://${host}:${controlPort}/ws/robot`);
-socket.binaryType = "arraybuffer";
-```
-
-No application-level login or handshake is performed by the current frontend. A successful WebSocket `open` event means the transport is available; it does not prove that every robot subsystem is ready.
-
-### 5.1 Normative State Machine
-
-```text
-DISCONNECTED
-  → [connect requested] CONNECTING
-CONNECTING
-  → [WebSocket open within 15 s] CONNECTED
-  → [error or 15 s timeout] RECONNECT_WAIT
-CONNECTED
-  → [valid robot frame received] CONNECTED; refresh last-message timestamp
-  → [no robot frame for 10 s] STALE
-  → [error/close] RECONNECT_WAIT
-STALE
-  → [close active socket; clear control state] RECONNECT_WAIT
-RECONNECT_WAIT
-  → [retry delay expires and network is eligible] CONNECTING
-  → [controller disposed/page closed] DISCONNECTED
-```
-
-Only `CONNECTED` permits command transmission. Entry into `STALE`, `RECONNECT_WAIT`, or `DISCONNECTED` **MUST** disable controls, invalidate all pending ACK waits, and clear non-zero velocity state.
-
-### Connection States
-
-| Browser event/state | Client action |
+| Setting | Default value |
 | --- | --- |
-| `CONNECTING` | Keep controls disabled. |
-| `open` / `OPEN` | Enable controls and begin receiving binary frames. |
-| `message` | Decode the binary `RobotMessage` envelope. |
-| `error` | Close the failed socket and wait before reconnecting. |
-| `close` / `CLOSED` | Disable controls, clear pending ACKs, clear motion state, then reconnect. |
+| Robot IP | `192.168.50.1` |
+| Control port | `8081` |
+| WebSocket path | `/ws/robot` |
+| Complete WebSocket URL | `ws://192.168.50.1:8081/ws/robot` |
 
-### 5.2 Timing and Retry Requirements
+The Wi-Fi SSID and password depend on the robot configuration and are not defined by this demo.
 
-| Parameter | Required/default value | Rule |
-| --- | ---: | --- |
-| WebSocket handshake timeout | `15 s` | Abort the attempt and enter `RECONNECT_WAIT`. |
-| Robot-message stale threshold | `10 s` | Recreate the socket; do not continue transmitting blindly. |
-| Simple Demo reconnect delay | `2 s` | Only one timer and one connection attempt may exist. |
-| Original Flutter reconnect check | `5 s` | Reference behaviour; implementations may use bounded backoff. |
-| Mode ACK timeout | `3 s` | Applies per mode command; timeout is an unknown outcome. |
+<details>
+<summary><strong>Developer details: exact UI behavior and command mapping</strong></summary>
 
-Repeated reconnects **SHOULD** use bounded exponential backoff with jitter in production, for example `2 s`, `4 s`, `8 s`, up to `30 s`. A successful, healthy connection may reset the backoff. Commands queued before or during disconnect **MUST NOT** be replayed.
+## Complete UI and Command Reference
 
-### Reconnect
+This section describes every interactive control and status element shown by the demo.
 
-Use one reconnect timer to prevent concurrent connection attempts:
+### Connection Inputs and Button
 
-```js
-let reconnectTimer = null;
+| UI element | Default | Function | Network or command effect |
+| --- | --- | --- | --- |
+| **Robot IP** input | `192.168.50.1` | Specifies the D1 hostname or IP address. Use the default when connected directly to the standard D1 hotspot. | Does not send a robot command. It becomes the host in `ws://<host>:<port>/ws/robot`. |
+| **Port** input | `8081` | Specifies the D1 WebSocket control-service port. Valid values are `1` through `65535`. | Does not send a robot command. It becomes the port in the WebSocket URL. |
+| **Connect** button | Available while disconnected | Validates the IP/host and port, then opens the robot WebSocket. | Opens `/ws/robot`. After `open`, automatically sends **Start Learning**, `ClientRobotMessage` field `8`, mode `3`. |
+| **Disconnect** button | Replaces Connect while connecting or connected | Stops local control and closes the current WebSocket. | If the socket is open, attempts to send one zero-velocity command through field `2`, then closes the socket with code `1000`. No command is saved for replay. |
 
-function scheduleReconnect() {
-  if (reconnectTimer !== null) return;
-  reconnectTimer = window.setTimeout(() => {
-    reconnectTimer = null;
-    connect();
-  }, 2000);
-}
-```
+The page never selects a Wi-Fi network and never presses Connect automatically. Changing either input only updates the target preview.
 
-On disconnect, reject every pending mode request and discard stale velocity values.
-
-### 5.3 Connection Sequence
+#### Connection Sequence
 
 ```text
-Client                         D1 backend
-  |--- HTTP/WS reachability ----->|
-  |--- WebSocket Upgrade -------->|
-  |<-- 101 Switching Protocols ---|
-  |    CONNECTED; enable UI        |
-  |<-- binary RobotMessage --------|
-  |    refresh liveness timer      |
+User selects Connect
+  → open ws://<Robot IP>:<Port>/ws/robot
+  → WebSocket open
+  → send Start Learning (field 8, mode 3, new seq)
+  → wait up to 3 seconds for field-20 ACK with the same seq
+  → result 1: enable Stand Up, Crouch Down, and both joysticks
+  → timeout/rejection: keep all robot controls disabled
 ```
 
-No physical command shall be transmitted as an automatic consequence of reconnecting.
+### Posture Buttons
 
-## 6. D1 Mode Commands
+Both posture buttons send a binary `D1ModeCommand` inside `ClientRobotMessage` field `8`. Each click receives a new non-zero sequence number. The next posture command is disabled until the matching field-20 ACK arrives or the three-second timeout expires.
 
-The client sends `D1ModeCommand` as field `8` of `ClientRobotMessage`:
+| Button | Mode value | Function | Command values |
+| --- | ---: | --- | --- |
+| **Stand Up** | `1` | Requests the robot's standing posture. | `seq = next sequence`, `mode = 1`, `client_time_ms = current Unix time` |
+| **Crouch Down** | `2` | Requests the robot's lowered/lying posture. The backend/protocol may call this Lie Down. | `seq = next sequence`, `mode = 2`, `client_time_ms = current Unix time` |
+
+Before either posture command is sent, the demo resets both joysticks and attempts to send zero velocity.
+
+The mode payload represented in Protobuf form is:
 
 ```proto
+message ClientRobotMessage {
+  D1ModeCommand d1_mode = 8;
+}
+
 message D1ModeCommand {
   uint32 seq = 1;
   D1Mode mode = 2;
@@ -304,542 +124,322 @@ message D1ModeCommand {
 }
 ```
 
-### 6.1 Command Field Constraints
+The successful response is `D1ModeAck` in incoming `RobotMessage` field `20`. Only `result = 1` is treated as accepted.
 
-| Field | Presence | Type/range | Validation rule |
+### Automatic Start Learning Command
+
+**Start Learning is intentionally not displayed as a button.** It is sent automatically once after every user-initiated WebSocket connection opens.
+
+| Command | Mode value | When sent | Effect on UI |
+| --- | ---: | --- | --- |
+| Start Learning | `3` | Immediately after WebSocket `open` | Controls remain disabled until the matching ACK returns `result = 1`. |
+
+If this command times out or returns a non-success result, the user must disconnect, correct the backend/robot condition, and connect again.
+
+### Left Joystick — Move
+
+The left joystick controls planar translation. Its visual position is normalized to the range `-1.0` through `1.0`. Values within the `0.08` center dead zone become zero.
+
+| Joystick direction | Normalized input | Robot value | Requested movement |
 | --- | --- | --- | --- |
-| `seq` | REQUIRED | `1..4294967295` | Must be non-zero and not reused while pending. Wrap from max to `1`. |
-| `mode` | REQUIRED | `1..4` for commands | `0` is unspecified and must not be transmitted as an executable command. Unknown values must be rejected. |
-| `client_time_ms` | REQUIRED | Non-negative signed 64-bit integer | Use current Unix milliseconds. JavaScript implementations must avoid loss beyond `Number.MAX_SAFE_INTEGER` or encode with `BigInt`. |
+| Up | `leftY > 0` | `linear.x / vx > 0` | Forward |
+| Down | `leftY < 0` | `linear.x / vx < 0` | Backward |
+| Left | `leftX < 0` | `linear.y / vy > 0` | Lateral left |
+| Right | `leftX > 0` | `linear.y / vy < 0` | Lateral right |
+| Diagonal | Both axes non-zero | Both `vx` and `vy` non-zero | Combined translation |
 
-The nested command **MUST** be encoded as `ClientRobotMessage` field `8`, wire type `2`. Integer fields use wire type `0`.
-
-| Mode code | Meaning |
-| ---: | --- |
-| `0` | Unspecified |
-| `1` | Stand |
-| `2` | Lie down / Crouch Down in the Simple Demo |
-| `3` | Enter reinforcement learning / Start Learning |
-| `4` | Exit reinforcement learning / Stop Learning |
-
-Required client behaviour:
-
-1. Allocate a unique, non-zero 32-bit `seq`.
-2. Set `client_time_ms` to the current Unix timestamp in milliseconds.
-3. Send one binary command frame.
-4. Wait up to three seconds for `RobotMessage.d1_mode_ack`, field `20`.
-5. Match the ACK by `seq`.
-6. Report acceptance or the returned rejection reason.
-
-### 6.2 Command State Machine and Sequence
+Conversion:
 
 ```text
-IDLE
-  → [validated user action] ENCODING
-ENCODING
-  → [encode succeeds and socket CONNECTED] AWAITING_ACK
-  → [validation/encoding fails] FAILED
-AWAITING_ACK
-  → [same seq, result 1] ACCEPTED
-  → [same seq, result 0 or 2..6] REJECTED
-  → [3 s expires] TIMED_OUT
-  → [socket disconnects] ABORTED
-ACCEPTED / REJECTED / TIMED_OUT / ABORTED / FAILED
-  → [result displayed and pending entry cleared] IDLE
+vx =  0.9 × leftY
+vy = -0.5 × leftX
 ```
+
+The circular input is magnitude-clamped, so diagonal input cannot exceed the normalized joystick radius.
+
+### Right Joystick — Turn
+
+The right joystick controls yaw rotation only. Vertical movement is ignored, and the horizontal axis uses the same `0.08` center dead zone.
+
+| Joystick direction | Normalized input | Robot value | Requested movement |
+| --- | --- | --- | --- |
+| Left | `rightX < 0` | `angular.z / vw > 0` | Rotate left |
+| Right | `rightX > 0` | `angular.z / vw < 0` | Rotate right |
+
+Conversion:
 
 ```text
-Client                                      D1 backend
-  |--- D1ModeCommand(seq=N, mode=M) ---------->|
-  |                 wait ≤ 3 s                 |
-  |<-- D1ModeAck(seq=N, mode=M, result=R) -----|
-  |--- correlate N; display R; clear pending --|
+vw = -0.4 × rightX
 ```
 
-A mismatched or unknown `seq` **MUST NOT** complete another pending command. The current client does not automatically retry a timed-out physical mode command because the robot may already have accepted it. Retrying requires a new sequence and an explicit user decision or application policy that accounts for duplicate physical actions.
+### Joystick Velocity Command
 
-Known stand fixture (`seq = 1`, timestamp `0`):
-
-```text
-42 06 08 01 10 01 18 00
-```
-
-## 7. Mode Acknowledgements
+Both joysticks update one combined velocity command. While either joystick is held, the newest values are sent every `20 ms` as binary `ClientRobotMessage` field `2`:
 
 ```proto
-message D1ModeAck {
-  uint32 seq = 1;
-  D1Mode mode = 2;
-  D1ModeResult result = 3;
-  string message = 4;
+message ClientRobotMessage {
+  Twist cmd_vel = 2;
 }
-```
 
-| ACK field | Presence | Accepted value | Client rule |
-| --- | --- | --- | --- |
-| `seq` | REQUIRED for correlation | `1..4294967295` | Ignore as unsolicited if no matching request is pending. |
-| `mode` | REQUIRED | `0..4` | For a matched ACK, verify it is compatible with the requested mode. |
-| `result` | REQUIRED | `0..6` | Unknown values are protocol errors and shall not be treated as success. |
-| `message` | OPTIONAL | Valid UTF-8 string | Display/log as diagnostic text; never execute or interpret as code. |
-
-| Result | Meaning |
-| ---: | --- |
-| `0` | Unspecified result |
-| `1` | Command accepted and sent to the bridge |
-| `2` | Bridge not ready |
-| `3` | Reinforcement-learning service offline |
-| `4` | Robot busy |
-| `5` | Rate limited |
-| `6` | Duplicate sequence |
-
-An accepted ACK does not confirm that physical movement has completed.
-
-The client **MUST** remove the pending entry after acceptance, rejection, timeout, or disconnect. Duplicate ACKs may be logged but shall have no control effect.
-
-## 8. Manual Velocity Control
-
-Velocity is field `2` of `ClientRobotMessage`:
-
-```proto
 message Twist {
   Vector3 linear = 1;
   Vector3 angular = 2;
 }
 ```
 
-| Field | Meaning | Unit |
+The demo populates the Twist values as follows:
+
+| Protobuf value | Demo value | Maximum magnitude | Unit |
+| --- | --- | ---: | --- |
+| `linear.x` | `vx` | `0.9` | m/s |
+| `linear.y` | `vy` | `0.5` | m/s |
+| `linear.z` | `0` | `0` | m/s |
+| `angular.x` | `0` | `0` | rad/s |
+| `angular.y` | `0` | `0` | rad/s |
+| `angular.z` | `vw` | `0.4` | rad/s |
+
+Releasing one joystick resets only that joystick's axes. If the other joystick remains active, its current command continues. Releasing the final active joystick stops the 20 ms timer and immediately sends the combined zero value.
+
+### Status and Read-Only Displays
+
+| Display | Meaning | Sends a command? |
 | --- | --- | --- |
-| `linear.x` | Forward/backward velocity (`vx`) | m/s |
-| `linear.y` | Lateral velocity (`vy`) | m/s |
-| `linear.z` | Always zero | m/s |
-| `angular.x` | Always zero | rad/s |
-| `angular.y` | Always zero | rad/s |
-| `angular.z` | Yaw velocity (`vw`) | rad/s |
+| Connection dot and text | Shows disconnected, connecting, connected, or failed state and the current target. | No |
+| Command status | Shows Start Learning progress, posture-command progress, ACK results, timeout, or connection errors. | No |
+| `vx · vy · vw` display | Shows the velocity values currently produced by the two joysticks. | No; it reflects the field-2 command generated by the joysticks. |
+| D1 hotspot hint | Reminds the user of the default `192.168.50.1:8081` endpoint. | No |
 
-### 8.1 Motion Field Constraints
+### Control Availability Rules
 
-| Value | Presence | Validation |
-| --- | --- | --- |
-| `vx` | Required semantic value | Finite IEEE-754 double; clamp to configured `[-MaxVx, +MaxVx]`. |
-| `vy` | Required semantic value | Finite IEEE-754 double; clamp to configured `[-MaxVy, +MaxVy]`. |
-| `vw` | Required semantic value | Finite IEEE-754 double; clamp to configured `[-MaxVw, +MaxVw]`. |
-| `linear.z` | Required semantic value | Exactly `0.0`; protobuf may omit the scalar because zero is the default. |
-| `angular.x`, `angular.y` | Required semantic values | Exactly `0.0`; protobuf may omit the scalars because zero is the default. |
+- The Robot IP and Port inputs are editable only while disconnected.
+- Stand Up, Crouch Down, and both joysticks are disabled before connection.
+- They remain disabled while the automatic Start Learning ACK is pending.
+- They are enabled only after Start Learning returns `result = 1`.
+- They are temporarily disabled while a posture command is awaiting its ACK.
+- Any socket close disables all robot controls and clears joystick motion.
 
-`MaxVx`, `MaxVy`, and `MaxVw` are deployment settings. This document does not invent universal limits; the controller **MUST** obtain approved limits for the target D1 and shall fail closed if safe limits are unavailable. `NaN`, positive infinity, and negative infinity **MUST** be converted to zero or rejected before encoding.
+</details>
 
-### 8.2 Motion-Control State Machine
+## Detailed Setup and Use
+
+### 1. Connect the Device to the D1 Wi-Fi
+
+Open the operating-system Wi-Fi settings and connect the computer or mobile device to the D1 hotspot. A normal web page cannot select or join Wi-Fi automatically.
+
+If the robot is connected through another network, use the IP address assigned to the robot on that network instead.
+
+### 2. Open the Demo
+
+The demo can normally be used by opening `index.html` directly in a browser. No installation or build step is required:
+
+1. Open this `Web` directory.
+2. Double-click `index.html`, or use the browser's **Open File** command.
+3. The page opens with a local address similar to:
+
+   ```text
+   file:///.../Web/index.html
+   ```
+
+4. Enter the D1 IP and port, then select **Connect**.
+
+When opened through `file://`, the demo still uses the plain robot WebSocket endpoint:
 
 ```text
-INACTIVE
-  → [manual control enabled; socket CONNECTED] ARMED_ZERO
-ARMED_ZERO
-  → [validated non-zero input] ACTIVE
-  → [manual control disabled] INACTIVE
-ACTIVE
-  → [input update] ACTIVE; transmit latest snapshot at 50 Hz
-  → [release/blur/hidden/controller loss] STOPPING
-  → [socket loss] BLOCKED
-STOPPING
-  → [zero frame issued; local snapshot cleared] ARMED_ZERO or INACTIVE
-BLOCKED
-  → [local snapshot cleared; controls disabled] INACTIVE
+ws://192.168.50.1:8081/ws/robot
 ```
 
-The latest input snapshot replaces older input; velocity frames **MUST NOT** be queued for later replay. A reconnect starts in `INACTIVE` or `ARMED_ZERO`, never `ACTIVE`.
+Direct file use works because the demo has no npm dependencies, ES modules, build output, or local `fetch()` requirements. The browser can load `index.js`, `styles.css`, and `image.png` through their relative paths.
 
-The original frontend sends fresh velocity frames every `20 ms` (`50 Hz`). A Wi-Fi controller must send a zero frame when:
+However, browser and backend security behavior can vary. A page opened through `file://` may send a WebSocket origin of `null`. If the D1 backend validates and rejects that origin, the page will open but the WebSocket connection will fail.
 
-- the joystick or key is released;
-- manual control is disabled;
-- the window loses focus;
-- the document becomes hidden;
-- the controller changes or disconnects;
-- the WebSocket is closing;
-- the client-side stop latch is active.
+#### Recommended Fallback: Use a Static Web Server
 
-The browser's zero-velocity command is not a physical emergency stop.
+If direct file use fails—or for more consistent behavior across browsers—open a terminal in this `Web` directory and start a local static server.
 
-### 8.3 Motion Timing and Reliability
+Python 3:
 
-| Item | Requirement |
+```bash
+python -m http.server 8000
+```
+
+Node.js:
+
+```bash
+npx serve .
+```
+
+Then open the address printed by the server. For the Python example, use:
+
+```text
+http://localhost:8000
+```
+
+Serving the files over HTTP gives the page a normal origin such as `http://localhost:8000` and is the recommended option for development and compatibility testing.
+
+### 3. Enter the Robot Address
+
+Enter the robot control endpoint in the connection fields:
+
+- **Robot IP:** `192.168.50.1` when connected directly to the standard D1 hotspot.
+- **Port:** `8081` for the default D1 control service.
+
+The page may also receive values through query parameters:
+
+```text
+http://localhost:8000/?host=192.168.50.1&port=8081
+```
+
+Query parameters only prefill the fields. They do not start a connection.
+
+### 4. Connect to the Robot
+
+Select **Connect**. The demo opens:
+
+```text
+ws://<robot-ip>:<port>/ws/robot
+```
+
+When the controller page itself is served over HTTPS, it selects `wss://` to avoid mixed-content violations. The robot or a reverse proxy must support WSS in that deployment.
+
+During connection:
+
+1. The IP and port fields are locked.
+2. The posture buttons and joysticks remain disabled.
+3. After the WebSocket opens, the demo automatically sends **Start Learning** (`mode = 3`).
+4. The demo waits up to three seconds for the matching mode ACK.
+5. Controls become available only when the ACK result is successful (`result = 1`).
+
+There is no visible Start Learning button because it is part of connection initialization.
+
+If initialization fails, the socket may still be open, but robot controls remain disabled. Select **Disconnect**, verify the robot service, and connect again.
+
+### 5. Control the Robot
+
+Place the robot in a clear test area before sending any command.
+
+#### Posture Buttons
+
+| Control | Mode | Result |
+| --- | ---: | --- |
+| **Stand Up** | `1` | Requests the standing posture. |
+| **Crouch Down** | `2` | Requests the lowered/lying posture. |
+
+Each posture command uses a new sequence number. The UI waits for the matching ACK before enabling another command.
+
+#### Left Joystick — Move
+
+- Push up: move forward.
+- Push down: move backward.
+- Push left: move laterally left.
+- Push right: move laterally right.
+- Diagonal input combines forward/backward and lateral motion.
+
+#### Right Joystick — Turn
+
+- Push left: rotate left.
+- Push right: rotate right.
+- Vertical movement is ignored.
+
+The demo uses the same sign conversion and default limits as the reference controller:
+
+```text
+vx =  0.9 × left Y
+vy = -0.5 × left X
+vw = -0.4 × right X
+```
+
+The displayed `vx`, `vy`, and `vw` values are the current command values. While either joystick is active, the latest velocity is transmitted every `20 ms`.
+
+### 6. Stop Motion and Disconnect
+
+The joystick returns to zero when released. The demo also clears motion and attempts to send a zero-velocity frame when:
+
+- the browser window loses focus;
+- the page becomes hidden;
+- the user selects **Disconnect**;
+- the WebSocket closes;
+- the page is unloaded.
+
+Select **Disconnect** before leaving the controller. The page does not reconnect automatically. Select **Connect** again when a new connection is required.
+
+## Understanding the Status
+
+| Status | Meaning |
 | --- | --- |
-| Nominal transmit period | `20 ms` (`50 Hz`) while manual control is active. |
-| Input freshness | Only the latest validated snapshot may be sent. |
-| Stop latency | Send zero immediately on a detected stop condition; do not wait for the next non-zero input. |
-| Retry | Do not retransmit historical non-zero frames after socket recovery. |
-| Browser backgrounding | Assume timers may be throttled; issue zero from `visibilitychange` before suspension where possible. |
-| Delivery semantics | WebSocket write means bytes were handed to the transport, not that motion occurred. |
+| `Not connected` | No active WebSocket. Address fields can be edited. |
+| `Connecting to D1...` | A user-requested WebSocket connection is in progress. |
+| `D1 connected` | The WebSocket is open; Start Learning may still be waiting for its ACK. |
+| `Learning mode ready` | Initialization succeeded and controls are enabled. |
+| `Start Learning failed` | Initialization was rejected or timed out; controls remain disabled. |
 
-## 9. HTTP Control Endpoints
+An accepted command confirms only that the backend accepted the request. It does not confirm that physical movement has completed.
 
-HTTP base:
+## Project Files
 
-```text
-http://192.168.50.1:8081
-```
-
-| Request | Body/query | Meaning |
-| --- | --- | --- |
-| `POST /robot/nav_goal` | `{"x":n,"y":n,"yaw":n,"roll":n,"pitch":n}` | Send navigation destination |
-| `POST /robot/initial_pose` | Same pose fields | Set estimated current pose |
-| `POST /robot/cancel_nav` | No body | Cancel navigation |
-| `POST /robot/action_cmd` | `{"data":"..."}` | Backend-defined compatibility action |
-| `GET /api/settings` | — | Load settings |
-| `POST /api/settings` | Settings JSON | Save settings |
-| `GET /api/tf` | `target_frame`, `source_frame` | Query transform |
-| `POST /subImage` | `{"topic":"/image_raw","subscribe":true}` | Start WebSocket image subscription |
-
-Map endpoints:
-
-| Request | Meaning |
+| File | Purpose |
 | --- | --- |
-| `GET /getAllMapList` | List map names |
-| `GET /currentMap` | Get selected map |
-| `GET /setCurrentMap?name=<name>` | Select map |
-| `GET /deleteMap?map_name=<name>` | Delete map |
-| `GET /getTopologyMap` | Get topology data |
-| `GET /saveMapEdit?...` | Save topology and obstacle edits |
-
-Send JSON with:
-
-```text
-Content-Type: application/json; charset=utf-8
-```
-
-Check the HTTP status before treating a request as successful. The current original client requires status `200` for the endpoints listed in this profile.
-
-### 9.1 HTTP Request State Machine
-
-```text
-IDLE
-  → [validated request created] REQUESTING
-REQUESTING
-  → [HTTP 200 and valid response] COMPLETED
-  → [network error, timeout, status other than 200, invalid body] FAILED
-COMPLETED / FAILED
-  → [result consumed] IDLE
-```
-
-An HTTP request that times out has an unknown server-side outcome. Mutating operations **MUST NOT** be retried automatically unless the endpoint is known to be idempotent. The current frontend does not define an HTTP timeout; a production browser controller **SHOULD** apply an application timeout selected for the deployment and expose it as configuration.
-
-### 9.2 HTTP Parameter Constraints
-
-| Endpoint/field | Presence | Validation rule |
-| --- | --- | --- |
-| `/robot/nav_goal`: `x`, `y`, `yaw` | REQUIRED | Finite JSON numbers; validated against the active map and approved operating area. |
-| `/robot/nav_goal`: `roll`, `pitch` | REQUIRED by current request body | Finite JSON numbers; normally `0` for 2D navigation. |
-| `/robot/initial_pose`: pose fields | REQUIRED | Same numeric validation; values describe estimated current pose. |
-| `/robot/action_cmd`: `data` | REQUIRED | Non-empty string supported by the deployed backend; no shell interpretation by the browser. |
-| `/subImage`: `topic` | REQUIRED | Non-empty topic string; current default `/image_raw`; recommended to begin with `/`. |
-| `/subImage`: `subscribe` | REQUIRED | JSON boolean only. |
-| `/api/tf`: frame names | REQUIRED | Non-empty strings encoded as query parameters. |
-| Map name | REQUIRED where used | Non-empty string; percent-encode; reject control characters. |
-| Settings body | REQUIRED for POST | JSON object whose schema is compatible with the deployed backend. |
-
-HTTP success means transport/API acceptance. Navigation and relocation completion **MUST** be determined from robot state/telemetry, not solely from HTTP `200`.
-
-### 9.3 HTTP Sequence Definitions
-
-Navigation:
-
-```text
-Client → validate pose → POST /robot/nav_goal
-Robot  → HTTP status/body
-Client → if 200, mark request accepted
-Client → observe nav_status for execution outcome
-```
-
-Image subscription:
-
-```text
-Client → POST /subImage {topic, subscribe:true}
-Robot  → HTTP 200
-Robot  → RobotMessage.image frames on /ws/robot
-Client → POST /subImage {topic, subscribe:false} before changing topic/closing when possible
-```
-
-## 10. Wi-Fi Video Stream
-
-The simplest live-video path is:
-
-```text
-http://192.168.50.1:8080/stream?topic=/image_raw
-```
-
-Minimal integration:
-
-```html
-<img
-  id="d1-video"
-  src="http://192.168.50.1:8080/stream?topic=/image_raw"
-  alt="D1 live camera"
-/>
-```
-
-The response remains open as multipart MJPEG. The browser decodes each JPEG frame and updates the image automatically.
-
-Configurable URL:
-
-```js
-const host = "192.168.50.1";
-const videoPort = 8080;
-const topic = "/image_raw";
-const url =
-  `http://${host}:${videoPort}/stream?topic=${encodeURIComponent(topic)}`;
-document.querySelector("#d1-video").src = url;
-```
-
-MJPEG display does not require `/subImage`. Use `/subImage` only when the application intends to decode `RobotMessage.image` binary frames itself.
-
-### 10.1 Video State Machine
-
-```text
-IDLE
-  → [stream requested] CONNECTING
-CONNECTING
-  → [first decodable frame] STREAMING
-  → [load error or application timeout] RETRY_WAIT
-STREAMING
-  → [image error/network loss] RETRY_WAIT
-RETRY_WAIT
-  → [bounded delay expires] CONNECTING with cache-busting URL
-  → [retry limit/policy reached] FAILED
-FAILED
-  → [explicit user/application retry] CONNECTING
-```
-
-MJPEG has no application ACK. The first decoded image is the readiness signal. A client **SHOULD** show connection state separately from robot-control state because ports `8080` and `8081` may fail independently.
-
-### 10.2 Video Timing, Retry, and Validation
-
-| Item | Requirement |
-| --- | --- |
-| Host | Non-empty valid host; normally the same D1 host as control. |
-| Port | Integer `1..65535`; default `8080`. |
-| Topic | Non-empty and URL-encoded; default `/image_raw`. |
-| Retry delay | `2 s` in the integration example; only one retry timer per image element. |
-| Cache control | Add a changing query value on retry to avoid a cached failure. |
-| Retry bound | Production clients should use bounded backoff and allow the user to stop retries. |
-| Resource cleanup | Clear retry timers and remove/replace the image source when the view is disposed. |
-
-Video failure **MUST NOT** disable an otherwise healthy control connection unless the application explicitly requires video for safe operation. Conversely, visible video **MUST NOT** be treated as proof that control port `8081` is healthy.
-
-## 11. Incoming Robot Data Fields
-
-| Field | Payload |
-| ---: | --- |
-| `1` | Image frame |
-| `3` | Heartbeat |
-| `4` | Laser scan |
-| `5` | Robot pose in map |
-| `6` | Local path |
-| `7` | Global path |
-| `8` | Trace path |
-| `9` | Odometry |
-| `10` | Battery |
-| `11` | Footprint |
-| `12` | Local costmap |
-| `13` | Global costmap |
-| `14` | Point cloud |
-| `15` | Diagnostics |
-| `17` | Navigation status |
-| `18` | Transform response |
-| `19` | GPS compatibility field |
-| `20` | D1 mode ACK |
-
-The Simple Demo decodes only field `20`. Full telemetry integration requires authoritative protobuf schemas and generated JavaScript/TypeScript types.
-
-## 12. Safety, Reliability, and Browser Compliance
-
-### 12.1 Non-Safety-Rated Control Declaration
-
-All commands originating from this browser controller are **non-safety-rated**. The webpage, browser event loop, Wi-Fi link, WebSocket, HTTP APIs, and client-side stop latch are not certified safety functions. They may be delayed, throttled, disconnected, suspended, or terminated without deterministic execution.
-
-### 12.2 Physical Emergency Stop Boundary
-
-| Mechanism | Responsibility and limitation |
-| --- | --- |
-| Physical emergency stop | Primary safety mechanism. Must independently remove or inhibit hazardous motion according to the robot's safety design. |
-| Robot-side safety controller | Enforces hardware limits, operating modes, watchdogs, and safe-state transitions. |
-| Browser zero-velocity command | Operational stop request only; delivery and execution are not guaranteed. |
-| Stand/Lie Down/RL commands | Mode/posture requests only; never emergency-stop substitutes. |
-| Connection indicator | Communication status only; not proof of robot readiness or safe state. |
-
-Loss of the webpage or Wi-Fi **MUST NOT** be the only mechanism relied upon to stop hazardous motion. Robot-side watchdog behaviour is outside this frontend contract and must be verified separately.
-
-### 12.3 Browser and Network Restrictions
-
-| Situation | Effect / solution |
-| --- | --- |
-| Page served through HTTP | Can use `ws://` and HTTP MJPEG on the trusted hotspot. |
-| Page served through HTTPS | Browser expects `wss://` and HTTPS video; plain endpoints are mixed content. |
-| D1 endpoint lacks CORS | JavaScript HTTP `fetch()` may be blocked even when `<img>` display works. |
-| Device is not on D1 Wi-Fi | `192.168.50.1` is normally unreachable. |
-| Client uses mobile data/VPN simultaneously | Routing may bypass the hotspot; disable conflicting routes if necessary. |
-| Browser tab is backgrounded | Timers can be throttled; send zero before losing visibility. |
-
-Recommended browser deployment solutions:
-
-1. **Trusted hotspot profile:** serve the controller through local `http://` and use the default HTTP/WS endpoints only on the isolated D1 network.
-2. **Same-origin TLS reverse proxy:** expose the controller, API, WebSocket, and MJPEG stream under one trusted HTTPS origin; forward WebSocket upgrades and disable proxy buffering for MJPEG.
-3. **Explicit CORS profile:** configure the backend to allow only the approved controller origin, required methods, and `Content-Type` header. Avoid wildcard origins when credentials or privileged interfaces are present.
-4. **No silent fallback:** if certificate, CORS, or mixed-content validation fails, show a diagnostic and keep controls disabled.
-
-### 12.4 Mandatory Disconnect Behaviour
-
-On error, close, stale timeout, page unload, controller loss, or manual-control shutdown, the client **MUST**:
-
-1. disable all motion-producing UI;
-2. clear the local velocity snapshot;
-3. attempt one immediate zero-velocity frame only if the socket is still open;
-4. reject/clear all pending ACK promises;
-5. cancel command and video retry timers owned by the disposed view;
-6. discard every unsent or queued physical command;
-7. create a fresh socket for reconnection;
-8. require fresh user input before any non-zero motion resumes.
-
-The client **MUST NOT** cache physical commands offline, persist them in browser storage, or replay them after reconnection.
-
-## 13. Standard Error and Failure Handling
-
-### 13.1 Wire-Level ACK Results
-
-The authoritative mode result values are defined in Section 7. Only result `1` is accepted. Values `0`, `2..6`, and unknown values are non-success outcomes.
-
-### 13.2 Client Diagnostic Codes
-
-The following identifiers are recommended client-side diagnostics. They are not additional robot wire-protocol result values.
-
-| Code | Condition | Required client response |
-| --- | --- | --- |
-| `D1-NET-001` | D1 network/host unreachable | Disable controls; instruct user to verify hotspot and routing. |
-| `D1-WS-001` | WebSocket handshake timeout | Close attempt; enter reconnect wait. |
-| `D1-WS-002` | WebSocket closed/error | Clear pending state and motion; reconnect with backoff. |
-| `D1-WS-003` | Robot message stream stale | Recreate socket; prohibit command replay. |
-| `D1-PB-001` | Malformed protobuf frame | Drop frame; log bounded diagnostic; do not execute. |
-| `D1-CMD-001` | Local command validation failure | Reject before transmission. |
-| `D1-CMD-002` | Mode ACK timeout | Report unknown outcome; do not auto-retry. |
-| `D1-CMD-003` | ACK sequence mismatch | Ignore for pending completion; record diagnostic. |
-| `D1-HTTP-001` | Network/timeout failure | Report unknown outcome for mutations. |
-| `D1-HTTP-002` | HTTP status other than `200` | Report path and status; do not mark successful. |
-| `D1-HTTP-003` | Invalid response type/body | Reject response; preserve last known valid state. |
-| `D1-VID-001` | MJPEG load/stream failure | Preserve control state; retry video independently. |
-| `D1-SEC-001` | Mixed-content or certificate block | Fail closed; require a valid HTTP/WS or HTTPS/WSS deployment pair. |
-
-| Failure | Required response |
-| --- | --- |
-| WebSocket handshake failure | Disable controls and retry with backoff. |
-| WebSocket closes | Clear pending commands and velocity state. |
-| Mode ACK timeout | Show an unknown/timeout result; do not assume success. |
-| HTTP status other than `200` | Show the endpoint and status code. |
-| MJPEG `error` event | Show a placeholder and retry with a cache-busting query. |
-| No robot messages for an application-defined stale period | Close and recreate the socket. |
-
-Do not queue physical commands while disconnected and replay them after reconnecting.
-
-### 13.3 Logging Requirements
-
-Logs **SHOULD** contain timestamp, endpoint, connection generation, sequence, mode, result, HTTP status, and diagnostic code where applicable. Logs **MUST NOT** contain Wi-Fi passwords, SSH credentials, session secrets, or unrestricted high-frequency velocity history. Repeated malformed frames and reconnect errors should be rate-limited to prevent resource exhaustion.
-
-## 14. Compatibility Risks and Troubleshooting
-
-### 14.1 Known Compatibility Risks
-
-| Risk | Symptom | Resolution |
-| --- | --- | --- |
-| Device not joined to D1 hotspot | `192.168.50.1` unreachable | Join D1 SSID in OS settings; verify assigned route. |
-| Mobile data or VPN preferred | Browser times out despite Wi-Fi connection | Disable conflicting VPN/mobile route or configure routing policy. |
-| HTTPS page with plain robot endpoints | Mixed-content error; WS/video blocked | Serve demo over HTTP on isolated hotspot or deploy trusted TLS reverse proxy. |
-| Untrusted/self-signed certificate | HTTPS/WSS rejected | Install an appropriate trusted certificate; do not bypass browser warnings in production. |
-| Backend CORS not configured | `fetch()` blocked while `<img>` may work | Allow the exact controller origin, methods, and headers on port `8081`. |
-| WebSocket proxy misconfiguration | Upgrade fails or closes immediately | Preserve `Upgrade`/`Connection` headers and binary frames. |
-| Wrong protobuf schema/version | Decode errors or incorrect fields | Match generated types and fixtures to deployed backend firmware. |
-| JSON sent to `/ws/robot` | No ACK or backend decode error | Send binary protobuf only. |
-| Text/Blob delivered instead of ArrayBuffer | Decoder rejects message | Set `binaryType="arraybuffer"`; normalize Blob when necessary. |
-| Background timer throttling | Irregular velocity cadence | Stop motion before hiding; rely on robot-side watchdog; never assume 50 Hz in background. |
-| Gamepad not visible initially | `navigator.getGamepads()` returns empty | Require a user button press and handle connect/disconnect events. |
-| MJPEG topic mismatch | Broken image/continuous retry | Verify `/image_raw` or use the configured robot topic. |
-| Port `8080` healthy, `8081` failed | Video visible but controls disabled | Diagnose ports separately; video is not control health. |
-| Port `8081` healthy, `8080` failed | Controls work without video | Diagnose video service/topic separately. |
-| Stale service worker/cache | Old JavaScript or failed stream URL reused | Disable/update service worker and use cache-busting during diagnosis. |
-| Duplicate sequence | Result code `6` | Correct sequence allocation; never reuse a pending value. |
-
-### 14.2 Ordered Troubleshooting Procedure
-
-1. Verify the device is associated with the intended D1 SSID.
-2. Inspect the route to `192.168.50.1`; disable VPN/mobile route conflicts.
-3. Confirm port `8081` and port `8080` independently.
-4. Check the page scheme and browser console for mixed-content/CORS errors.
-5. Verify the WebSocket reaches `OPEN` within 15 seconds.
-6. Confirm outgoing `/ws/robot` frames are binary, not text.
-7. Compare a Stand frame with fixture `42 06 08 01 10 01 18 00` using timestamp `0` in a unit test.
-8. Check ACK `seq`, `mode`, and `result`; do not accept unmatched ACKs.
-9. For motion, test a zero frame first and confirm configured limits.
-10. For MJPEG, open the stream URL directly and verify the image topic.
-11. Match protobuf code generation to the deployed backend before decoding telemetry.
-12. Review bounded logs without exposing credentials.
-
-## 15. Integration Verification
-
-### 15.1 Baseline Checklist
-
-1. Connect the test device to the D1 hotspot.
-2. Confirm that `192.168.50.1` is reachable.
-3. Open `/ws/robot` and verify the `open` event.
-4. Send Stand with a new sequence and verify its matching ACK.
-5. Send Crouch Down and Start Learning separately.
-6. Verify that buttons are disabled during each pending command.
-7. If velocity control is added, test `(0,0,0)` before any non-zero value.
-8. Verify stop behaviour on release, blur, background, and disconnect.
-9. Display the MJPEG stream from port `8080`.
-10. Disconnect Wi-Fi and verify that controls disable immediately.
-11. Reconnect Wi-Fi and verify a fresh socket is created without replaying old commands.
-
-Perform motion tests in a clear area with direct access to the robot's physical safety controls.
-
-### 15.2 Standardized Verification Cases
-
-| Test ID | Preconditions | Procedure | Expected result |
-| --- | --- | --- | --- |
-| `NET-001` | Device disconnected from D1 Wi-Fi | Open controller | Controls remain disabled; network diagnostic shown. |
-| `NET-002` | Device on D1 hotspot | Reach host and open socket | `/ws/robot` enters `CONNECTED` within configured handshake timeout. |
-| `SEC-001` | HTTPS controller, plain D1 endpoints | Load page | Browser blocks mixed content; client reports failure without downgrade. |
-| `WS-001` | Connected socket | Stop robot messages for more than 10 s | Client marks stale, clears control state, and recreates socket. |
-| `WS-002` | Connected socket | Force disconnect during pending command | Pending request becomes aborted; command is not replayed. |
-| `CMD-001` | Connected and robot ready | Send Stand with new `seq` | Binary field `8` sent; matching result `1` reported accepted. |
-| `CMD-002` | Connected and robot ready | Send Crouch Down | Mode value `2`; matching ACK handled. |
-| `CMD-003` | Connected and RL available | Send Start Learning | Mode value `3`; matching ACK handled. |
-| `CMD-004` | ACK suppressed | Send mode and wait 3 s | Timeout reported as unknown; no automatic retry. |
-| `CMD-005` | One command pending | Deliver different `seq` ACK | Pending command remains unresolved; mismatch logged. |
-| `CMD-006` | Unit-test environment | Encode Stand, `seq=1`, time `0` | Exact bytes `42 06 08 01 10 01 18 00`. |
-| `VEL-001` | Motion integration installed | Send `(0,0,0)` | Valid field-2 Twist frame; no requested motion. |
-| `VEL-002` | Approved limits configured | Apply joystick extremes | Values remain finite and clamped to approved maxima. |
-| `VEL-003` | Non-zero manual motion active | Release input | Zero transmitted immediately and subsequent snapshots remain zero. |
-| `VEL-004` | Non-zero manual motion active | Hide page or remove controller | Local state cleared; zero attempted; no replay on return. |
-| `HTTP-001` | Control HTTP reachable | POST valid navigation goal | HTTP `200` treated as accepted; execution tracked through `nav_status`. |
-| `HTTP-002` | Control HTTP reachable | POST invalid/non-finite local input | Client rejects before network transmission. |
-| `HTTP-003` | Request in flight | Force timeout | Unknown outcome reported; mutating request not automatically replayed. |
-| `VID-001` | Video service and topic available | Load MJPEG URL | First frame renders and video state becomes `STREAMING`. |
-| `VID-002` | Video streaming | Stop video service | Video enters retry state; robot controls retain independent status. |
-| `VID-003` | `/subImage` path implemented | Subscribe then unsubscribe | HTTP bodies use exact topic/boolean; binary image frames stop after unsubscribe. |
-| `REC-001` | Active connection | Disconnect and reconnect Wi-Fi | Fresh socket opens; all prior commands/velocity remain discarded. |
-| `PB-001` | Connected socket | Deliver malformed binary frame | Frame dropped; no control action or crash. |
-| `COMP-001` | Target firmware selected | Run backend fixture suite | All required fields/endpoints match the declared compatibility profile. |
-
-Evidence for each test should include build/version identifiers, browser and OS, robot firmware/backend identifier where available, timestamped result, and relevant sanitized logs.
-
-## 16. Conformance and Safety Requirements
-
-An implementation conforms to this specification only when all applicable REQUIRED/MUST requirements and verification cases pass against the target backend compatibility profile.
-
-- The D1 hotspot **MUST** be treated as a trusted, isolated control network.
-- Plain HTTP/WS control endpoints **MUST NOT** be exposed to an untrusted network.
-- HTTPS/WSS **MUST** be used when traffic crosses an untrusted network.
-- Hotspot passwords, SSH credentials, and other secrets **MUST NOT** appear in browser logs.
-- Every numeric control input **MUST** be finite, validated, and clamped.
-- A physical emergency stop **MUST** remain available; webpage controls are non-safety-rated.
-- ACK result `1` **MUST** be interpreted as software acceptance only, not completed robot motion.
-- Disconnects **MUST** clear pending commands and motion snapshots.
-- Offline physical command caching and post-reconnect replay **MUST NOT** be implemented.
-- Any deviation in endpoint, field number, enum value, timing profile, or security mapping **MUST** be documented in a deployment-specific compatibility supplement.
+| `index.html` | Controller markup, connection form, action buttons, joystick elements, and status regions. |
+| `index.js` | WebSocket lifecycle, binary protocol codec, mode ACK handling, joystick input, velocity transmission, and safe-stop logic. |
+| `styles.css` | Responsive demo layout and control states. |
+| `README.md` | Operation guide for this demo. |
+| `README_MORE.md` | Extended Wi-Fi protocol and custom-controller integration reference. |
+
+## Browser and Network Notes
+
+- `/ws/robot` accepts binary Protobuf frames. Do not send JSON strings on this channel.
+- A browser cannot automatically join the D1 hotspot.
+- VPNs, mobile-data routing, and another interface using the same subnet can prevent access to `192.168.50.1`.
+- An HTTPS page normally cannot connect to a plain `ws://` endpoint. Serve the demo over HTTP on the isolated D1 network, or deploy a trusted HTTPS/WSS reverse proxy.
+- The control WebSocket and MJPEG video service can use different ports. Test them independently.
+- Do not expose the unauthenticated robot-control service to a public or untrusted network.
+
+## Troubleshooting
+
+### Why Does Connect Fail?
+
+1. Confirm that the device is connected to the correct D1 Wi-Fi.
+2. Confirm that the robot address is `192.168.50.1`, unless the deployment uses another address.
+3. Confirm that port `8081` and path `/ws/robot` are available.
+4. Disable a conflicting VPN or network route temporarily.
+5. Check the browser developer console for mixed-content, certificate, or connection errors.
+
+### Why Are the Controls Still Disabled?
+
+The automatic Start Learning command did not receive a successful ACK. Check the status message, verify that the learning service is available in the backend, and make sure binary mode frames and field-20 ACKs match the robot firmware.
+
+### What Does a Posture Timeout Mean?
+
+The demo waits three seconds for a matching ACK. A timeout is an unknown result; do not assume the robot rejected or completed the command, and do not automatically resend it.
+
+### Why Does a Joystick Not Move the Robot?
+
+1. Confirm that the status says `Learning mode ready`.
+2. Confirm that the joystick visually moves and the velocity display changes.
+3. Verify that the backend accepts `ClientRobotMessage` field `2` Twist frames.
+4. Test a zero-velocity frame before non-zero motion.
+5. Compare the deployed backend schema with [D1_Backend](https://github.com/NavBotHub/D1_Backend).
+
+## Extending the Demo
+
+Use [README_MORE.md](README_MORE.md) when adding:
+
+- more D1 mode commands;
+- navigation goals and initial-pose controls;
+- map management;
+- robot telemetry and status displays;
+- MJPEG or WebSocket video;
+- generated Protobuf JavaScript/TypeScript types;
+- authentication, TLS, reverse-proxy, or production reconnect behavior.
+
+Use [D1_Flutter](https://github.com/NavBotHub/D1_Flutter) as the reference for existing frontend behavior and input mapping. Use [D1_Backend](https://github.com/NavBotHub/D1_Backend) as the authoritative source for backend endpoints, `.proto` schemas, supported commands, and firmware compatibility.
+
+## Safety
+
+Browser controls are not safety-rated.
+
+- Keep the robot in a clear area.
+- Keep physical emergency-stop access available.
+- Start with zero velocity and low-risk posture tests.
+- Do not cache commands while disconnected.
+- Do not replay old commands after reconnecting.
+- Do not treat an ACK as proof that physical movement has finished.
